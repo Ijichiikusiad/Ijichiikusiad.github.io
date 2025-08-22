@@ -141,15 +141,15 @@
     });
 
     document.getElementById('spawn-random').addEventListener('click', ()=>{
-      for(let i=0;i<12;i++){
+      for(let i=0;i<100;i++){
         addCube({size: 0.3+Math.random()*2, mass: 0.2+Math.random()*8, position: new THREE.Vector3((Math.random()-0.5)*6, 2+i*0.6, (Math.random()-0.5)*6), color: ['#ff6b6b','#4d96ff','#ffd93d','#8af27a'][Math.floor(Math.random()*4)]});
       }
     });
 
     document.getElementById('spawn-grid').addEventListener('click', ()=>{
       const n = 5; const spacing = 1.2;
-      for(let x=0;x<n;x++) for(let y=0;y<n;y++) for(let z=0;z<2;z++){
-        addCube({size:0.9, mass:1, position:new THREE.Vector3((x-n/2)*spacing, 1 + y*spacing + z*1.5, (z-n/2)*spacing), color:'#ffd93d'});
+      for(let x=0;x<n;x++) for(let y=0;y<n;y++) for(let z=0;z<n;z++){
+        addCube({size:0.9, mass:1, position:new THREE.Vector3(x*spacing+1, y*spacing+1, z*spacing+1), color:'#00ffff'});
       }
     });
 
@@ -199,7 +199,8 @@ function animate(time){
       if(mag > maxForce){ posDiff.scale(maxForce / mag, posDiff); }
       dragged.body.applyForce(posDiff, worldPoint);
       // 提高角阻尼，避免抓取时不停旋转
-      dragged.body.angularDamping = 0.9;
+      // dragged.body.angularDamping = 0.9;
+      dragged.body.angularDamping = 1;
     }catch(e){ /* ignore */ }
   }
 
@@ -317,7 +318,8 @@ function animate(time){
     const distance = camera.position.distanceTo(hitPoint);
     dragged = {mesh: sel.mesh, body: sel.body, localPoint, target: hitPoint.clone(), distance, _prevLinearDamping: sel.body.linearDamping, _prevAngularDamping: sel.body.angularDamping};
     // 增强阻尼，避免被抓取时抖动过大
-    sel.body.linearDamping = 0.7;
+    // sel.body.linearDamping = 0.7;
+    sel.body.linearDamping = 0;
   } else {
     // 没点中：对方向发射一个小冲量（推动物体）
     const all = objects.map(o=>o.mesh);

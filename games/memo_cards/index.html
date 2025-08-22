@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>记忆翻牌游戏</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 600px;
+            margin-bottom: 20px;
+            background-color: rgba(255, 255, 255, 0.2);
+            padding: 15px;
+            border-radius: 10px;
+            color: white;
+            font-size: 1.2rem;
+        }
+        
+        .game-board {
+            display: grid;
+            grid-template-columns: repeat(50, 1fr);
+            gap: 15px;
+            perspective: 1000px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            width: 100px;
+            height: 100px;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.5s;
+            cursor: pointer;
+        }
+        
+        .card.flipped {
+            transform: rotateY(180deg);
+        }
+        
+        .card.matched {
+            transform: rotateY(180deg);
+            opacity: 0;
+        }
+        
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backface-visibility: hidden;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        .card-front {
+            background-color: #3498db;
+            transform: rotateY(180deg);
+            font-size: 2.5rem;
+            color: white;
+        }
+        
+        .card-back {
+            background-color: #2c3e50;
+            background-image: linear-gradient(45deg, #34495e 25%, transparent 25%),
+                              linear-gradient(-45deg, #34495e 25%, transparent 25%),
+                              linear-gradient(45deg, transparent 75%, #34495e 75%),
+                              linear-gradient(-45deg, transparent 75%, #34495e 75%);
+            background-size: 10px 10px;
+            background-position: 0 0, 0 5px, 5px -5px, -5px 0px;
+        }
+        
+        .button {
+            background-color: #2ecc71;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+        
+        .button:hover {
+            background-color: #27ae60;
+        }
+        
+        .message {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(46, 204, 113, 0.9);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 5px;
+            font-size: 1.2rem;
+            display: none;
+            z-index: 100;
+        }
+        
+        @media (max-width: 600px) {
+            .game-board {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 10px;
+            }
+            
+            .card {
+                width: 80px;
+                height: 80px;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>记忆翻牌游戏</h1>
+        <p>找出所有匹配的卡片对</p>
+    </header>
+    
+    <div class="game-info">
+        <div>尝试次数: <span id="moves">0</span></div>
+        <div>匹配对数: <span id="matches">0</span>/8</div>
+        <div>用时: <span id="timer">00:00</span></div>
+    </div>
+    
+    <main>
+        <div class="game-board" id="game-board"></div>
+        <div class="button" id="restart-button">重新开始</div>
+    </main>
+    
+    <div class="message" id="message"></div>
+
+    <script>
+        // 游戏状态
+        const gameState = {
+            cards: [],
+            flippedCards: [],
+            matchedPairs: 0,
+            moves: 0,
+            timer: 0,
+            timerInterval: null,
+            isLocked: false
+        };
+        
+        // 卡片内容
+        const cardSymbols = ['🍎', '🍌', '🍒', '🍓', '🍉', '🍇', '🍊', '🍋', '🩺', '🩹', '🩸','🩳', '🩲', '🩱', '🩰', '🧿', '🧾', '🧽', '🧼', '🧻', '🧺', '🧹', '🧸', '🧷', '🧶', '🧵', '🧴', '🧳', '🧲', '🧱', '🧰', '🧯', '🧮', '🧭', '🧬', '🧫', '🧪', '🧩', '🧨', '🧧', '🧦', '🧥', '🧤', '🧣', '🧢', '🧡', '🧠', '🧟', '🧞', '🧝', '🧜', '🧛', '🧚', '🧙', '🧘', '🧗', '🧖', '🧕', '🧔', '🧓', '🧒', '🧑', '🧐', '🧏', '🧎', '🧍', '🧊', '🧉', '🧈', '🧇', '🧆', '🧅', '🧄', '🧃', '🧂', '🧁', '🧀', '🦿', '🦾', '🦽', '🦼', '🦻', '🦺', '🦹', '🦸', '🦷', '🦶', '🦵', '🦴', '🦳', '🦲', '🦱', '🦰', '🦯', '🦮','🦪', '🦩', '🦨', '🦧', '🦦', '🦥', '🦢', '🦡', '🦠', '🦟', '🦞', '🦝', '🦜', '🦛', '🦚', '🦙', '🦘', '🦗', '🦖', '🦕', '🦔', '🦓', '🦒', '🦑', '🦐', '🦏', '🦎', '🦍', '🦌', '🦋', '🦊', '🦉', '🦈', '🦇', '🦆', '🦅', '🦄', '🦃', '🦂', '🦁', '🦀','🥅', '🥄', '🥃', '🥂', '🥁', '🥀',  '🥱', '🥰', '🥯', '🥮', '🥭', '🥬', '🥫', '🥪', '🥩', '🥨', '🥧', '🥦', '🥥', '🥤', '🥣', '🥢', '🥡', '🥠', '🥟', '🥞', '🥝', '🥜', '🥛', '🥚', '🥙', '🥘', '🥗', '🥖', '🥕', '🥔', '🥓', '🥒', '🥑', '🥐', '🥏', '🥎', '🥍', '🥌', '🥋', '🥊', '🥉', '🥈', '🥇', '🥶', '🥵', '🥴', '🥳', '🥿', '🥾', '🥽', '🥼', '🥻', '🥺','🤿', '🤾', '🤽', '🤼', '🤻', '🤺', '🤹', '🤸', '🤷', '🤶', '🤵', '🤴', '🤳', '🤲', '🤱', '🤰', '🤯', '🤮', '🤭', '🤬', '🤫', '🤪', '🤩', '🤨', '🤧', '🤦', '🤥', '🤤', '🤣', '🤢', '🤡', '🤠', '🤟', '🤞', '🤝', '🤜', '🤛', '🤚', '🤙', '🤘', '🤗', '🤖', '🤕', '🤔', '🤓', '🤒', '🤑', '🤐', '🤏', '🤎', '🤍', '🟫', '🟪', '🟩', '🟨', '🟧', '🟦', '🟥', '🟤', '🟣', '🟢', '🟡', '🟠', '🚿', '🚾', '🚽', '🚼', '🚻', '🚺', '🚹', '🚸', '🚷', '🚶', '🚵', '🚴', '🚳', '🚲', '🚱', '🚰', '🚯', '🚮', '🚭', '🚬', '🚫', '🚪', '🚩', '🚨', '🚧', '🚦', '🚥', '🚤', '🚣', '🚢', '🚡', '🚠', '🚟', '🚞', '🚝', '🚜', '🚛', '🚚', '🚙', '🚘', '🚗', '🚖', '🚕', '🚔', '🚓', '🚒', '🚑', '🚐', '🚏', '🚎', '🚍', '🚌', '🚋', '🚊', '🚉', '🚈', '🚇', '🚆', '🚅', '🚄', '🚃', '🚂', '🚁', '🚀','🙏', '🙎', '🙍', '🙌', '🙋', '🙊', '🙉', '🙈', '🙇', '🙆', '🙅', '🙄', '🙃', '🙂', '🙁', '🙀', '😿', '😾', '😽', '😼', '😻', '😺', '😹', '😸', '😷', '😶', '😵', '😴', '😳', '😲', '😱', '😰', '😯', '😮', '😭', '😬', '😫', '😪', '😩', '😨', '😧', '😦', '😥', '😤', '😣', '😢', '😡', '😠', '😟', '😞', '😝', '😜', '😛', '😚', '😙', '😘', '😗', '😖', '😕', '😔', '😓', '😒', '😑', '😐', '😏', '😎', '😍', '😌', '😋', '😊', '😉', '😈', '😇', '😆', '😅', '😄', '😃', '😂', '😁', '😀', '🛺', '🛹', '🛸', '🛷', '🛶', '🛵', '🛴','📿', '📾', '📽', '📼', '📻', '📺', '📹', '📸', '📷', '📶', '📵', '📴', '📳', '📲', '📱', '📰', '📯', '📮', '📭', '📬', '📫', '📪', '📩', '📨', '📧', '📦', '📥', '📤', '📣', '📢', '📡', '📠', '📟', '📞', '📝', '📜', '📛', '📚', '📙', '📘', '📗', '📖', '📕', '📔', '📓', '📒', '📑', '📐', '📏', '📎', '📍', '📌', '📋', '📊', '📉', '📈', '📇', '📆', '📅', '📄', '📃', '📂', '📁', '📀', '💿', '💾', '💽', '💼', '💻', '💺', '💹', '💸', '💷', '💶', '💵', '💴', '💳', '💲', '💱', '💰', '💯', '💮', '💭', '💬', '💫', '💪', '💩', '💨', '💧', '💦', '💥', '💤', '💣', '💢', '💡', '💠', '💟', '💞', '💝', '💜', '💛', '💚', '💙', '💘', '💗', '💖', '💕', '💔', '💓', '💒', '💑', '💐', '💏', '💎', '💍', '💌', '💋', '💊', '💉', '💈', '💇', '💆', '💅', '💄', '💃', '💂', '💁', '💀',  '👿', '👾', '👽', '👼', '👻', '👺', '👹', '👸', '👷', '👶', '👵', '👴', '👳', '👲', '👱', '👰', '👯', '👮', '👭', '👬', '👫', '👪', '👩', '👨', '👧', '👦', '👥', '👤', '👣', '👢', '👡', '👠', '👟', '👞', '👝', '👜', '👛', '👚', '👙', '👘', '👗', '👖', '👕', '👔', '👓', '👒', '👑', '👐', '👏', '👎', '👍', '👌', '👋', '👊', '👉', '👈', '👇', '👆', '👅', '👄', '👃', '👂', '👁', '👀', '🐿', '🐾', '🐽', '🐼', '🐻', '🐺', '🐹', '🐸', '🐷', '🐶', '🐵', '🐴', '🐳', '🐲', '🐱', '🐰', '🐯', '🐮', '🐭', '🐬', '🐫', '🐪', '🐩', '🐨', '🐧', '🐦', '🐥', '🐤', '🐣', '🐢', '🐡', '🐠', '🐟', '🐞', '🐝', '🐜', '🐛', '🐚', '🐙', '🐘', '🐗', '🐖', '🐕', '🐔', '🐓', '🐒', '🐑', '🐐', '🐏', '🐎', '🐍', '🐌', '🐋', '🐊', '🐉', '🐈', '🐇', '🐆', '🐅', '🐄', '🐃', '🐂', '🐁', '🐀', '🎿', '🎾', '🎽', '🎼', '🎻', '🎺', '🎹', '🎸', '🎷', '🎶', '🎵', '🎴', '🎳', '🎲', '🎱', '🎰', '🎯', '🎮', '🎭', '🎬', '🎫', '🎪', '🎩', '🎨', '🎧', '🎦', '🎥', '🎤', '🎣', '🎢', '🎡', '🎠', '🎟', '🎞', '🎝', '🎜', '🎛', '🎚', '🎙', '🎘', '🎗', '🎖', '🎕', '🎔', '🎓', '🎒', '🎑', '🎐', '🎏', '🎎', '🎍', '🎌', '🎋', '🎊', '🎉', '🎈', '🎇', '🎆', '🎅', '🎄', '🎃', '🎂', '🎁', '🎀','🏿', '🏾', '🏽', '🏼', '🏻', '🏺', '🏹', '🏸', '🏷', '🏶', '🏵', '🏴', '🏳', '🏲', '🏱', '🏰', '🏯', '🏮', '🏭', '🏬', '🏫', '🏪', '🏩', '🏨', '🏧', '🏦', '🏥', '🏤', '🏣', '🏢', '🏡', '🏠', '🏟', '🏞', '🏝', '🏜', '🏛', '🏚', '🏙', '🏘', '🏗', '🏖', '🏕', '🏔', '🏓', '🏒', '🏑', '🏐', '🏏', '🏎', '🏍', '🏌', '🏋', '🏊', '🏉', '🏈', '🏇', '🏆', '🏅', '🏄', '🏃', '🏂', '🏁', '🏀',  '🍿', '🍾', '🍽', '🍼', '🍻', '🍺', '🍹', '🍸', '🍷', '🍶', '🍵', '🍴', '🍳', '🍲', '🍱', '🍰', '🍯', '🍮', '🍭', '🍬', '🍫', '🍪', '🍩', '🍨', '🍧', '🍦', '🍥', '🍤', '🍣', '🍢', '🍡', '🍠', '🍟', '🍞', '🍝', '🍜', '🍛', '🍚', '🍙', '🍘', '🍗', '🍖', '🍕', '🍔', '🍓', '🍒', '🍑', '🍐', '🍏', '🍎', '🍍', '🍌', '🍋', '🍊', '🍉', '🍈', '🍇', '🍆', '🍅', '🍄', '🍃', '🍂', '🍁', '🍀', '🌿', '🌾', '🌽', '🌼', '🌻', '🌺', '🌹', '🌸', '🌷', '🌶', '🌵', '🌴', '🌳', '🌲', '🌱', '🌰', '🌯', '🌮', '🌭', '🌬', '🌫', '🌪', '🌩', '🌨', '🌧', '🌦', '🌥', '🌤', '🌣', '🌢', '🌡', '🌠', '🌟', '🌞', '🌝', '🌜', '🌛', '🌚', '🌙', '🌘', '🌗', '🌖', '🌕', '🌔', '🌓', '🌒', '🌑', '🌐', '🌏', '🌎', '🌍', '🌌', '🌋', '🌊', '🌉', '🌈', '🌇', '🌆', '🌅', '🌄', '🌃', '🌂', '🌁', '🌀'];
+        // const cardSymbols = ['🍎', '🍌', '🍒', '🍓', '🍉', '🍇', '🍊', '🍋', '0', '1', '2', '3', '4', '5', '6', '7'];
+        // const cardSymbols = ['0', '1', '2', '3', '4', '5', '6', '7'];
+        // const cardSymbols = ['0', '1', '2', '3', '4', '5', '6', '7'];
+        // const cardSymbols = ['0','0','0','0','0','0','0','0','1'];
+        
+        // DOM 元素
+        const gameBoard = document.getElementById('game-board');
+        const movesDisplay = document.getElementById('moves');
+        const matchesDisplay = document.getElementById('matches');
+        const timerDisplay = document.getElementById('timer');
+        const restartButton = document.getElementById('restart-button');
+        const messageElement = document.getElementById('message');
+        
+        // 初始化游戏
+        function initGame() {
+            // 重置游戏状态
+            gameState.cards = [];
+            gameState.flippedCards = [];
+            gameState.matchedPairs = 0;
+            gameState.moves = 0;
+            gameState.timer = 0;
+            gameState.isLocked = false;
+            
+            // 清除计时器
+            if (gameState.timerInterval) {
+                clearInterval(gameState.timerInterval);
+            }
+            
+            // 更新显示
+            movesDisplay.textContent = '0';
+            matchesDisplay.textContent = '0';
+            timerDisplay.textContent = '00:00';
+            
+            // 创建卡片数组（每个符号两张）
+            const cardArray = [...cardSymbols, ...cardSymbols];
+            
+            // 洗牌
+            for (let i = cardArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [cardArray[i], cardArray[j]] = [cardArray[j], cardArray[i]];
+            }
+            
+            // 创建卡片
+            gameBoard.innerHTML = '';
+            cardArray.forEach((symbol, index) => {
+                const card = createCard(symbol, index);
+                gameBoard.appendChild(card);
+                gameState.cards.push(card);
+            });
+            
+            // 开始计时
+            startTimer();
+        }
+        
+        // 创建卡片元素
+        function createCard(symbol, index) {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.dataset.symbol = symbol;
+            card.dataset.index = index;
+            
+            card.innerHTML = `
+                <div class="card-face card-front">${symbol}</div>
+                <div class="card-face card-back"></div>
+            `;
+            
+            card.addEventListener('click', () => flipCard(card));
+            
+            return card;
+        }
+        
+        // 翻牌逻辑
+        function flipCard(card) {
+            // 如果游戏锁定或卡片已翻开或已匹配，则不处理
+            if (gameState.isLocked || 
+                card.classList.contains('flipped') || 
+                card.classList.contains('matched')) {
+                return;
+            }
+            
+            // 翻开卡片
+            card.classList.add('flipped');
+            gameState.flippedCards.push(card);
+            
+            // 如果翻开了两张卡片
+            if (gameState.flippedCards.length === 2) {
+                gameState.moves++;
+                movesDisplay.textContent = gameState.moves;
+                
+                // 检查是否匹配
+                checkForMatch();
+            }
+        }
+        
+        // 检查卡片是否匹配
+        function checkForMatch() {
+            gameState.isLocked = true;
+            const [card1, card2] = gameState.flippedCards;
+            const match = card1.dataset.symbol === card2.dataset.symbol;
+            
+            if (match) {
+                // 匹配成功
+                setTimeout(() => {
+                    card1.classList.add('matched');
+                    card2.classList.add('matched');
+                    gameState.matchedPairs++;
+                    matchesDisplay.textContent = gameState.matchedPairs;
+                    
+                    // 检查是否游戏结束
+                    if (gameState.matchedPairs === cardSymbols.length) {
+                        endGame();
+                    }
+                    
+                    resetFlippedCards();
+                }, 500);
+            } else {
+                // 匹配失败
+                setTimeout(() => {
+                    card1.classList.remove('flipped');
+                    card2.classList.remove('flipped');
+                    resetFlippedCards();
+                }, 1000);
+            }
+        }
+        
+        // 重置翻开的卡片
+        function resetFlippedCards() {
+            gameState.flippedCards = [];
+            gameState.isLocked = false;
+        }
+        
+        // 开始计时
+        function startTimer() {
+            gameState.timerInterval = setInterval(() => {
+                gameState.timer++;
+                const minutes = Math.floor(gameState.timer / 60);
+                const seconds = gameState.timer % 60;
+                timerDisplay.textContent = 
+                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }, 1000);
+        }
+        
+        // 结束游戏
+        function endGame() {
+            clearInterval(gameState.timerInterval);
+            showMessage(`恭喜你完成游戏！用时 ${formatTime(gameState.timer)}，尝试 ${gameState.moves} 次`);
+        }
+        
+        // 格式化时间
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins} 分钟 ${secs} 秒`;
+        }
+        
+        // 显示消息
+        function showMessage(text) {
+            messageElement.textContent = text;
+            messageElement.style.display = 'block';
+            
+            setTimeout(() => {
+                messageElement.style.display = 'none';
+            }, 3000);
+        }
+        
+        // 重新开始按钮事件
+        restartButton.addEventListener('click', initGame);
+        
+        // 初始化游戏
+        initGame();
+    </script>
+</body>
+</html>

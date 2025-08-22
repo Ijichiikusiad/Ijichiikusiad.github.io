@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>方块摧毁小游戏 — 多关卡（增强版，多方块）</title>
+  <style>
+    html,body{height:100%;margin:0;background:#0b0b0b;color:#ddd;font-family:system-ui,Segoe UI,Roboto,"Noto Sans",sans-serif}
+    #container{width:100%;height:100vh;position:relative;overflow:hidden}
+    #hud{position:absolute;right:12px;top:12px;width:320px;padding:12px;background:rgba(0,0,0,0.45);backdrop-filter:blur(6px);border-radius:8px}
+    #hud h2{margin:0 0 8px 0;font-size:16px}
+    #info{position:absolute;left:12px;top:12px;background:rgba(0,0,0,0.3);padding:8px;border-radius:6px}
+    #message{position:absolute;left:50%;top:20%;transform:translateX(-50%);background:rgba(0,0,0,0.85);padding:18px;border-radius:8px;font-size:18px;display:none;white-space:pre-wrap}
+    button,input,select{font-size:14px}
+    .small{font-size:13px;color:#bbb}
+    #levels{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+    #levels button{flex:1 1 48%}
+  </style>
+</head>
+<body>
+  <div id="container"></div>
+  <div id="hud">
+    <h2>方块摧毁 — 多关卡（10 关）</h2>
+    <div class="small">按键：A/D 左右移动 • 鼠标移动瞄准 • 左键投掷 • Shift 改视角 • R 重置</div>
+    <hr>
+    <div>关卡：<span id="levelNum">1</span>/10</div>
+    <div id="levels"></div>
+    <div style="margin-top:8px">投掷力量：<span id="powerVal">18</span></div>
+    <input id="power" type="range" min="6" max="60" step="1" value="18">
+    <div style="margin-top:8px">方块大小：<span id="sizeVal">0.8</span></div>
+    <input id="cubeSize" type="range" min="0.4" max="2" step="0.1" value="0.8">
+    <div style="margin-top:8px">方块质量：<span id="massVal">2</span></div>
+    <input id="cubeMass" type="range" min="0.5" max="12" step="0.5" value="2">
+    <hr>
+    <button id="nextLevel">下一关</button>
+    <button id="resetBtn">重置当前关</button>
+    <button id="restartAll">重头开始</button>
+    <hr>
+    <div>状态：<span id="status">准备中</span></div>
+  </div>
+  <div id="info">移动：A/D • 投掷：鼠标左键 • 按住 Shift 可旋转视角</div>
+  <div id="message"></div>
+
+  <script type="importmap">{
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js",
+      "three/examples/jsm/controls/OrbitControls.js": "https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/controls/OrbitControls.js",
+      "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+    }
+  }</script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+    import * as CANNON from 'cannon-es';
+
+    const container = document.getElementById('container');
+    const statusEl = document.getElementById('status');
+    const messageEl = document.getElementById('message');
+    const levelNumEl = document.getElementById('levelNum');
+
+    // Three.js scene
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b0b0b);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 2000);
+    camera.position.set(0, 6, 18);
+
+    const renderer = new THREE.WebGLRenderer({antialias:true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.enablePan = false;
+    controls.enableRotate = true;
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+    dir.position.set(5,10,5);
+    dir.castShadow = true;
+    dir.shadow.mapSize.set(2048,2048);
+    scene.add(dir);
+
+    // Physics world
+    const world = new CANNON.World({gravity: new CANNON.Vec3(0, -9.82, 0)});
+    world.broadphase = new CANNON.SAPBroadphase(world);
+    world.solver.iterations = 30; // more iterations for stability
+
+    // Materials
+    const groundMaterial = new CANNON.Material('ground');
+    const boxMaterial = new CANNON.Material('box');
+    const boxBoxContact = new CANNON.ContactMaterial(boxMaterial, boxMaterial, {friction:0.85, restitution:0.01, contactEquationStiffness:1e6, contactEquationRelaxation:3});
+    const groundBoxContact = new CANNON.ContactMaterial(groundMaterial, boxMaterial, {friction:0.95, restitution:0.01, contactEquationStiffness:1e7, contactEquationRelaxation:3});
+    world.addContactMaterial(boxBoxContact);
+    world.addContactMaterial(groundBoxContact);
+    world.defaultContactMaterial = boxBoxContact;
+
+    // Ground
+    const groundGeo = new THREE.PlaneGeometry(200,200);
+    const groundMat = new THREE.MeshStandardMaterial({color:0x222222,metalness:0.2,roughness:0.8});
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI/2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const groundBody = new CANNON.Body({mass:0, shape: new CANNON.Plane(), material: groundMaterial});
+    groundBody.quaternion.setFromEuler(-Math.PI/2,0,0);
+    world.addBody(groundBody);
+
+    // Arrays
+    const objects = []; // destructible objects
+
+    // Player
+    const player = {mesh:null, body:null, x:0, speed:10, width:0.8, height:1.8};
+    function createPlayer(){
+      if(player.mesh) scene.remove(player.mesh);
+      if(player.body) try{ world.removeBody(player.body);}catch(e){}
+      const geo = new THREE.BoxGeometry(player.width, player.height, 0.6);
+      const mat = new THREE.MeshStandardMaterial({color:0x88ccff});
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.position.set(0, player.height/2, 12);
+      scene.add(mesh);
+
+      const shape = new CANNON.Box(new CANNON.Vec3(player.width/2, player.height/2, 0.3));
+      const body = new CANNON.Body({mass:0, shape});
+      body.position.set(0, player.height/2, 12);
+      world.addBody(body);
+
+      player.mesh = mesh; player.body = body; player.x = 0;
+    }
+
+    // Prize
+    let prize = {mesh:null, body:null};
+    function makePrize(position){
+      if(prize.mesh) scene.remove(prize.mesh);
+      if(prize.body) try{ world.removeBody(prize.body);}catch(e){}
+      const geo = new THREE.SphereGeometry(0.45, 24, 24);
+      const mat = new THREE.MeshStandardMaterial({color:0xffd700, emissive:0x552200});
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.position.copy(position);
+      scene.add(mesh);
+
+      const shape = new CANNON.Sphere(0.45);
+      const body = new CANNON.Body({mass:1, shape});
+      body.position.set(position.x, position.y, position.z);
+      body.angularDamping = 0.4; body.linearDamping = 0.05;
+      world.addBody(body);
+
+      prize.mesh = mesh; prize.body = body;
+
+      // prize collides with ground -> win
+      prize.body.addEventListener('collide', (e)=>{
+        if(e.body === groundBody){ win(); }
+      });
+    }
+
+    // Add static foundation (now implemented)
+    function addFoundationBox(opts={size:6, position:new THREE.Vector3(0,0.3,-4), color:'#444444'}){
+      const size = opts.size || 6;
+      const pos = opts.position || new THREE.Vector3(0,0.3,-4);
+      const color = opts.color || '#444';
+
+      // visual mesh
+      const geo = new THREE.BoxGeometry(size, 0.6, size);
+      const mat = new THREE.MeshStandardMaterial({color});
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.receiveShadow = true; mesh.castShadow = false;
+      mesh.position.copy(pos);
+      scene.add(mesh);
+
+      // physics body (static)
+      const half = new CANNON.Vec3(size/2, 0.3, size/2);
+      const shape = new CANNON.Box(half);
+      const body = new CANNON.Body({mass:0, shape, material: groundMaterial});
+      body.position.set(pos.x, pos.y, pos.z);
+      world.addBody(body);
+
+      return {mesh, body};
+    }
+
+    // Add destructible box (may be projectile)
+    function addDestructibleBox({size=1, mass=2, position=new THREE.Vector3(0,5,0), color='#ff6b6b', isProjectile=false}){
+      // ensure we don't create exact overlapping bodies by nudging if needed
+      const safePos = position.clone();
+      for(let attempt=0; attempt<8; attempt++){
+        let coll = false;
+        for(const o of objects){
+          const dx = o.body.position.x - safePos.x;
+          const dy = o.body.position.y - safePos.y;
+          const dz = o.body.position.z - safePos.z;
+          const dist2 = dx*dx + dy*dy + dz*dz;
+          if(dist2 < 0.0001){ coll = true; break; }
+        }
+        if(!coll) break;
+        safePos.y += 0.02 + Math.random()*0.02; // nudge up a bit
+      }
+
+      const geo = new THREE.BoxGeometry(size, size, size);
+      const mat = new THREE.MeshStandardMaterial({color});
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.position.copy(safePos);
+      scene.add(mesh);
+
+      const half = size/2;
+      const shape = new CANNON.Box(new CANNON.Vec3(half, half, half));
+      const body = new CANNON.Body({mass, shape, material: boxMaterial});
+      body.position.set(safePos.x, safePos.y, safePos.z);
+      body.angularDamping = size < 0.7 ? 0.9 : 0.4;
+      body.linearDamping = 0.02;
+      body.allowSleep = true; body.sleepSpeedLimit = 0.1; body.sleepTimeLimit = 1;
+      body.isProjectile = !!isProjectile;
+      world.addBody(body);
+
+      const obj = {mesh, body, isProjectile:!!isProjectile, persistent:false};
+      objects.push(obj);
+
+      // when projectile or thrown object hits ground, remove it (but not prize)
+      body.addEventListener('collide', (e)=>{
+        if(e.body === groundBody){
+          // schedule removal after a short delay so physics settles
+          if(obj.isProjectile){ removeObject(obj, 60); }
+        }
+      });
+
+      return obj;
+    }
+
+    function removeObject(obj, delay=0){
+      setTimeout(()=>{
+        const i = objects.indexOf(obj);
+        if(i!==-1){
+          try{ world.removeBody(obj.body); }catch(e){}
+          try{ scene.remove(obj.mesh); }catch(e){}
+          objects.splice(i,1);
+        }
+      }, delay);
+    }
+
+    // Throwing
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    function getAimDirection(clientX, clientY){
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      return raycaster.ray.direction.clone().normalize();
+    }
+
+    function throwCube(dir, power){
+      const size = parseFloat(document.getElementById('cubeSize').value);
+      const mass = parseFloat(document.getElementById('cubeMass').value);
+      const spawnPos = new THREE.Vector3().copy(player.mesh.position);
+      const forwardOffset = 1.2 + size/2;
+      spawnPos.add(dir.clone().multiplyScalar(forwardOffset));
+      spawnPos.y = player.height/2 + 0.6;
+      const obj = addDestructibleBox({size, mass, position: spawnPos, color:'#9fb8ff', isProjectile:true});
+      const impulse = new CANNON.Vec3(dir.x * power * mass, dir.y * power * mass, dir.z * power * mass);
+      obj.body.applyImpulse(impulse, obj.body.position);
+      status('投掷方块');
+    }
+
+    // Levels
+    const TOTAL_LEVELS = 10;
+    let currentLevel = 1;
+
+    function clearLevel(){
+      // immediately remove all destructible objects
+      for(const obj of objects){
+        try{ world.removeBody(obj.body);}catch(e){}
+        try{ scene.remove(obj.mesh);}catch(e){}
+      }
+      objects.length = 0;
+      // remove prize
+      if(prize.mesh){ try{ scene.remove(prize.mesh);}catch(e){} }
+      if(prize.body){ try{ world.removeBody(prize.body);}catch(e){} }
+      prize.mesh = prize.body = null;
+
+      won = false; messageEl.style.display='none';
+    }
+
+    function spawnLevel(n){
+      clearLevel();
+      levelNumEl.textContent = n;
+      status('加载第 ' + n + ' 关');
+
+      // Many levels increased block counts / density
+      if(n===1){
+        // taller, denser tower
+        addFoundationBox({size:6, position:new THREE.Vector3(0,0.3,-4), color:'#535353'});
+        for(let y=0;y<10;y++){
+          for(let i=-1;i<=1;i++){
+            for(let j=-1;j<=1;j++){
+              addDestructibleBox({size:0.9, mass:3, position:new THREE.Vector3(i*0.95, 0.45 + y*0.95, -4 + j*0.95)});
+            }
+          }
+        }
+        makePrize(new THREE.Vector3(0, 0.45 + 10*0.95 + 0.9, -4));
+      } else if(n===2){
+        addFoundationBox({size:8, position:new THREE.Vector3(0,0.3,-4), color:'#4a4a4a'});
+        // wide base with many pillars and a tall central column
+        for(let x=-3;x<=3;x+=1){ addDestructibleBox({size:1.2,mass:3,position:new THREE.Vector3(x*0.9,0.6,-4)}); }
+        for(let y=1;y<=14;y++){
+          addDestructibleBox({size:0.95,mass:2.2,position:new THREE.Vector3(0,0.5 + y*1.0,-4)});
+        }
+        makePrize(new THREE.Vector3(0, 0.5 + 15*1.0 + 0.8, -4));
+      } else if(n===3){
+        addFoundationBox({size:10, position:new THREE.Vector3(0,0.3,-6), color:'#444'});
+        // castle wall much wider and higher
+        const cols = 11;
+        for(let c=0;c<cols;c++){
+          for(let r=0;r<8;r++){
+            const x = (c - (cols-1)/2) * 0.92;
+            addDestructibleBox({size:0.9, mass:1.8, position:new THREE.Vector3(x, 0.45 + r*0.95, -6)});
+          }
+        }
+        makePrize(new THREE.Vector3(0, 8.5, -6));
+      } else if(n===4){
+        // solid round tower (filled) — bigger and taller
+        const rings = 9;
+        const radius = 2.4;
+        const blockSize = 0.8;
+        const step = blockSize;
+        for(let y=0;y<rings;y++){
+          const yy = 0.4 + y*0.85;
+          const limit = Math.ceil(radius/step);
+          for(let xi=-limit; xi<=limit; xi++){
+            for(let zi=-limit; zi<=limit; zi++){
+              const px = xi*step;
+              const pz = zi*step;
+              if(Math.sqrt(px*px + pz*pz) <= radius + 0.001){
+                addDestructibleBox({size:blockSize, mass:1.8, position:new THREE.Vector3(px, yy, pz - 4)});
+              }
+            }
+          }
+        }
+        addDestructibleBox({size:0.5, mass:0.6, position:new THREE.Vector3(0.6, rings*0.85 + 0.45, -4)});
+        addDestructibleBox({size:0.5, mass:0.6, position:new THREE.Vector3(-0.6, rings*0.85 + 0.45, -4)});
+        addDestructibleBox({size:0.6, mass:0.8, position:new THREE.Vector3(0, rings*0.85 + 0.45, -3.3)});
+        // settle
+        for(let i=0;i<20;i++) world.step(1/60);
+        makePrize(new THREE.Vector3(0, rings*0.85 + 1.0, -4));
+      } else if(n===5){
+        addFoundationBox({size:10, position:new THREE.Vector3(0,0.3,-6), color:'#3a3a3a'});
+        // arch and bridge heavier
+        for(let i=0;i<9;i++){
+          addDestructibleBox({size:1.2,mass:3,position:new THREE.Vector3(-4 + i*1.0,1.2,-6)});
+        }
+        // keystone and supports
+        addDestructibleBox({size:2.2,mass:5,position:new THREE.Vector3(0,3.0,-6)});
+        for(let s=0;s<3;s++) addDestructibleBox({size:1.0,mass:2,position:new THREE.Vector3(-4 + s*2.5,0.9,-6)});
+        for(let s=0;s<3;s++) addDestructibleBox({size:1.0,mass:2,position:new THREE.Vector3(4 - s*2.5,0.9,-6)});
+        makePrize(new THREE.Vector3(0,5.0,-6));
+      } else if(n===6){
+        addFoundationBox({size:12, position:new THREE.Vector3(0,0.3,-6), color:'#343434'});
+        // layered fortress, more layers and denser
+        for(let layer=0;layer<8;layer++){
+          const len = 10 - layer*1;
+          for(let i=0;i<len;i++){
+            const x = (i-(len-1)/2)*1.02;
+            for(let zOff=0; zOff<2; zOff++){
+              addDestructibleBox({size:0.95,mass:2.5,position:new THREE.Vector3(x,0.6 + layer*0.9,-6 - layer*0.25 - zOff*0.8)});
+            }
+          }
+        }
+        makePrize(new THREE.Vector3(0, 0.6 + 8*0.9 + 0.9, -7));
+      } else if(n===7){
+        addFoundationBox({size:12, position:new THREE.Vector3(0,0.3,-8), color:'#2f2f2f'});
+        // two taller towers with a thicker connector
+        for(let t=-1;t<=1;t+=2){
+          for(let y=0;y<14;y++) addDestructibleBox({size:0.9,mass:2,position:new THREE.Vector3(t*2.5,0.45 + y*0.95,-8)});
+        }
+        // bridge (wider)
+        for(let i=0;i<11;i++) addDestructibleBox({size:0.9,mass:1.8,position:new THREE.Vector3(-5 + i*1.0,13.5,-8)});
+        makePrize(new THREE.Vector3(0,15.5,-8));
+      } else if(n===8){
+        addFoundationBox({size:14, position:new THREE.Vector3(0,0.3,-8), color:'#2b2b2b'});
+        // mixed geometry: many pillars and slabs
+        for(let x=-4;x<=4;x++) for(let h=0;h<10;h++) addDestructibleBox({size:0.8,mass:1.5,position:new THREE.Vector3(x*1.05,0.45 + h*0.9,-8)});
+        // slabs
+        for(let i=0;i<8;i++) addDestructibleBox({size:2.2,mass:4,position:new THREE.Vector3(0,5.2 + i*0.4,-8 - i*0.6)});
+        makePrize(new THREE.Vector3(0,10.5,-8));
+      } else if(n===9){
+        addFoundationBox({size:14, position:new THREE.Vector3(0,0.3,-10), color:'#252525'});
+        // complex castle with multiple towers and higher center
+        for(let t=0;t<6;t++){
+          const angle = t*Math.PI/3;
+          const x = Math.cos(angle)*4.2;
+          const z = Math.sin(angle)*4.2 -10;
+          for(let y=0;y<11;y++) addDestructibleBox({size:0.9,mass:2,position:new THREE.Vector3(x,0.45 + y*0.95,z)});
+        }
+        // center keep
+        for(let y=0;y<10;y++) addDestructibleBox({size:1.2,mass:3,position:new THREE.Vector3(0,0.6 + y*1.02,-10)});
+        makePrize(new THREE.Vector3(0,11.5,-10));
+      } else if(n===10){
+        addFoundationBox({size:18, position:new THREE.Vector3(0,0.3,-12), color:'#222222'});
+        // sprawling fortress + towers + battlements — denser grid
+        for(let x=-7;x<=7;x++) for(let y=0;y<8;y++) addDestructibleBox({size:0.9,mass:2,position:new THREE.Vector3(x*1.02,0.45 + y*0.95,-12)});
+        for(let t=0;t<10;t++){
+          const a = t/10*Math.PI*2;
+          const x = Math.cos(a)*7.2;
+          const z = Math.sin(a)*7.2 -12;
+          for(let y=0;y<10;y++) addDestructibleBox({size:0.8,mass:1.8,position:new THREE.Vector3(x,0.45 + y*0.95,z)});
+        }
+        // settle
+        for(let i=0;i<30;i++) world.step(1/60);
+        makePrize(new THREE.Vector3(0,12.5,-12));
+      }
+
+      status('第 ' + n + ' 关准备就绪 — 多方块版');
+    }
+
+    // UI: level buttons
+    const levelsDiv = document.getElementById('levels');
+    for(let i=1;i<=TOTAL_LEVELS;i++){
+      const b = document.createElement('button'); b.textContent = '关 ' + i; b.addEventListener('click', ()=>{ currentLevel = i; spawnLevel(i); }); levelsDiv.appendChild(b);
+    }
+
+    document.getElementById('power').addEventListener('input', (e)=>{ document.getElementById('powerVal').textContent = e.target.value; });
+    document.getElementById('cubeSize').addEventListener('input', (e)=>{ document.getElementById('sizeVal').textContent = e.target.value; });
+    document.getElementById('cubeMass').addEventListener('input', (e)=>{ document.getElementById('massVal').textContent = e.target.value; });
+    document.getElementById('nextLevel').addEventListener('click', ()=>{ currentLevel = Math.min(TOTAL_LEVELS, currentLevel+1); spawnLevel(currentLevel); });
+    document.getElementById('resetBtn').addEventListener('click', ()=>{ spawnLevel(currentLevel); });
+    document.getElementById('restartAll').addEventListener('click', ()=>{ currentLevel = 1; spawnLevel(1); });
+
+    // Input handling
+    const keys = {};
+    window.addEventListener('keydown', (e)=>{ keys[e.code]=true; if(e.code==='KeyR') spawnLevel(currentLevel); });
+    window.addEventListener('keyup', (e)=>{ keys[e.code]=false; });
+
+    renderer.domElement.addEventListener('mousedown', (e)=>{
+      if(e.button === 0){ const dir = getAimDirection(e.clientX, e.clientY); const power = parseFloat(document.getElementById('power').value); throwCube(dir, power); }
+    });
+
+    // Win logic
+    let won = false;
+    function win(){ if(won) return; won = true; message('你赢了！按「下一关」继续或 R 重试'); status('胜利：第' + currentLevel + '关'); }
+
+    function status(text){ statusEl.textContent = text; }
+    function message(txt){ messageEl.style.display = 'block'; messageEl.textContent = txt; }
+
+    // Initial
+    createPlayer();
+    spawnLevel(1);
+
+    // Physics loop
+    const timeStep = 1/60; let lastTime;
+    function animate(time){
+      requestAnimationFrame(animate);
+      if(!lastTime) lastTime = time; const dt = Math.min((time-lastTime)/1000, 0.05);
+
+      // Player movement
+      const move = (keys['KeyA']? -1:0) + (keys['KeyD']? 1:0);
+      player.x += move * player.speed * dt; player.x = Math.max(-14, Math.min(14, player.x));
+      const targetZ = 12; player.mesh.position.set(player.x, player.height/2, targetZ); player.mesh.quaternion.set(0,0,0,1); player.body.position.set(player.x, player.height/2, targetZ);
+
+      world.step(timeStep, dt);
+
+      // sync objects and remove slept projectiles (to avoid lingering tiny movements)
+      for(const o of objects.slice()){
+        if(o.body.sleepState === CANNON.Body.SLEEPING && o.isProjectile){ removeObject(o,0); continue; }
+        o.mesh.position.copy(o.body.position); o.mesh.quaternion.copy(o.body.quaternion);
+      }
+      if(prize.body){ prize.mesh.position.copy(prize.body.position); prize.mesh.quaternion.copy(prize.body.quaternion); }
+
+      controls.update(); renderer.render(scene, camera); lastTime = time;
+
+      // small safety: if prize below ground level (fall through) consider won
+      if(prize.body && !won){ if(prize.body.position.y < 0.4) win(); }
+    }
+    requestAnimationFrame(animate);
+
+    // Resize
+    window.addEventListener('resize', ()=>{ camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+
+    status('游戏就绪 — 多方块版，选择关卡开始');
+  </script>
+</body>
+</html>
